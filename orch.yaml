@@ -1,0 +1,96 @@
+id: wine-data-processing
+namespace: bottleneck
+
+triggers:
+  - id: monthly-trigger
+    type: schedule
+    cron: "0 9 15 * *"  # Exécution chaque 15 du mois à 9h
+
+tasks:
+  - id: load_data
+    type: io.kestra.plugin.scripts.python.Script
+    script: |
+      import duckdb
+      conn = duckdb.connect(database=':memory:')
+      conn.execute("""
+      CREATE TABLE erp AS SELECT * FROM read_csv('erp.xlsx', header=True);
+      CREATE TABLE web AS SELECT * FROM read_csv('web.xlsx', header=True);
+      CREATE TABLE liaison AS SELECT * FROM read_csv('liaison.xlsx', header=True);
+      """)
+
+  - id: clean_data
+    type: io.kestra.plugin.scripts.sql.duckdb.Script
+    script: |
+      DELETE FROM erp WHERE id IS NULL;
+      DELETE FROM web WHERE id IS NULL;
+      DELETE FROM liaison WHERE id IS NULL;
+
+  - id: deduplicate_data
+    type: io.kestra.plugin.scripts.sql.duckdb.Script
+    script: |
+      CREATE TABLE erp_clean AS SELECT DISTINCT * FROM erp;
+      CREATE TABLE web_clean AS SELECT DISTINCT * FROM web;
+      CREATE TABLE liaison_clean AS SELECT DISTINCT * FROM liaison;
+
+  - id: join_data
+    type: io.kestra.plugin.scripts.sql.duckdb.Script
+    script: |
+      CREATE TABLE merged_data AS
+      SELECT e.*, w.*
+      FROM erp_clean e
+      JOIN liaison_clean l ON e.id = l.erp_id
+      JOIN web_clean w ON l.web_id = w.id;
+
+  - id: calculate_revenue
+    type: io.kestra.plugin.scripts.sql.duckdb.Script
+    script: |
+      CREATE TABLE revenue AS
+      SELECT product_id, SUM(price * quantity) AS revenue
+      FROM merged_data
+      GROUP BY product_id;
+
+      CREATE TABLE total_revenue AS
+      SELECT SUM(revenue) AS total FROM revenue;
+
+  - id: identify_premium_wines
+    type: io.kestra.plugin.scripts.python.Script
+    script: |
+      import duckdb
+      import pandas as pd
+
+      conn = duckdb.connect(database=':memory:')
+      df = conn.execute("SELECT product_id, price FROM merged_data").fetch_df()
+
+      mean_price = df['price'].mean()
+      std_price = df['price'].std()
+      df['z_score'] = (df['price'] - mean_price) / std_price
+
+      premium_wines = df[df['z_score'] > 2]
+      ordinary_wines = df[df['z_score'] <= 2]
+
+      premium_wines.to_csv('premium_wines.csv', index=False)
+      ordinary_wines.to_csv('ordinary_wines.csv', index=False)
+
+  - id: export_reports
+    type: io.kestra.plugin.scripts.sql.duckdb.Script
+    script: |
+      COPY (SELECT * FROM revenue) TO 'revenue_report.xlsx' (FORMAT 'xlsx');
+      COPY (SELECT * FROM premium_wines) TO 'premium_wines.csv' (FORMAT 'csv');
+      COPY (SELECT * FROM ordinary_wines) TO 'ordinary_wines.csv' (FORMAT 'csv');
+
+  - id: send_reports
+    type: io.kestra.plugin.notifications.email.Sendgrid
+    from: "no-reply@bottleneck.com"
+    to: ["laure@bottleneck.com", "maria@bottleneck.com"]
+    subject: "Rapports Mensuels - Chiffres et Vins Premium"
+    attachments:
+      - 'revenue_report.xlsx'
+      - 'premium_wines.csv'
+      - 'ordinary_wines.csv'
+    content: |
+      Bonjour,
+      
+      Veuillez trouver ci-joints les rapports des chiffres d'affaires et la liste des vins premium et ordinaires.
+      
+      Cordialement,
+      L'équipe Data Engineering.
