@@ -60,8 +60,8 @@ Le workflow est configuré pour se déclencher automatiquement tous les 15 du mo
 
 ### Envoi d'email
 Les rapports sont envoyés à deux adresses emails :
-  - laure@bottleneck.com
-  - maria@bottleneck.com
+  - xxx@gmail.com
+  - xxx@gmail.com
     
 Vous pouvez modifier ces adresses dans le fichier de configuration du workflow selon vos besoins.
 
