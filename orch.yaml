@@ -99,20 +99,27 @@ tasks:
           COPY (SELECT * FROM ordinary_wines) TO 'ordinary_wines.csv' (FORMAT 'csv');
           
           
-  - id: send_reports
-    from: '{{ secret("EMAIL_SENDER") }}'
-    to: 
-      - '{{ secret("EMAIL_RECIPIENT_1") }}'
-     - '{{ secret("EMAIL_RECIPIENT_2") }}'
-    subject: "Rapports Mensuels - Chiffres et Vins Premium"
-    attachments:
-      - 'revenue_report.xlsx'
-      - 'premium_wines.csv'
-      - 'ordinary_wines.csv'
-    content: |
-      Bonjour,
-      
-      Veuillez trouver ci-joints les rapports des chiffres d'affaires et la liste des vins premium et ordinaires.
-      
-      Cordialement,
-      L'équipe Data Engineering.
+ - id: send_email_if_files_exist
+    type: io.kestra.core.tasks.flows.Conditional
+    conditions:
+      - type: io.kestra.core.tasks.flows.ConditionExpression
+        expression: "{{ task.export_revenue.outputs.file != null or task.export_premium_wines.outputs.file != null or task.export_ordinary_wines.outputs.file != null }}"
+    tasks:
+      - id: send_reports
+        type: io.kestra.plugin.notifications.email.Sendgrid
+        from: "{{ secret('EMAIL_FROM') }}"
+        to: 
+          - "{{ secret('EMAIL_TO_1') }}"
+          - "{{ secret('EMAIL_TO_2') }}"
+        subject: "Rapports Mensuels - Chiffres et Vins Premium"
+        attachments:
+          - 'revenue_report.xlsx'
+          - 'premium_wines.csv'
+          - 'ordinary_wines.csv'
+        content: |
+          Bonjour,
+          
+          Veuillez trouver ci-joints les rapports des chiffres d'affaires et la liste des vins premium et ordinaires.
+          
+          Cordialement,
+          L'équipe Data Engineering.
