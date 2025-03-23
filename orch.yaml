@@ -75,13 +75,35 @@ tasks:
     type: io.kestra.plugin.scripts.sql.duckdb.Script
     script: |
       COPY (SELECT * FROM revenue) TO 'revenue_report.xlsx' (FORMAT 'xlsx');
-      COPY (SELECT * FROM premium_wines) TO 'premium_wines.csv' (FORMAT 'csv');
-      COPY (SELECT * FROM ordinary_wines) TO 'ordinary_wines.csv' (FORMAT 'csv');
 
+  - id: check_premium_wines
+    type: io.kestra.core.tasks.flows.Conditional
+    conditions:
+      - type: io.kestra.core.tasks.flows.ConditionExpression
+        expression: "{{ task.identify_premium_wines.outputs.premium_wines | length > 0 }}"
+    tasks:
+      - id: export_premium_wines
+        type: io.kestra.plugin.scripts.sql.duckdb.Script
+        script: |
+          COPY (SELECT * FROM premium_wines) TO 'premium_wines.csv' (FORMAT 'csv');
+
+  - id: check_ordinary_wines
+    type: io.kestra.core.tasks.flows.Conditional
+    conditions:
+      - type: io.kestra.core.tasks.flows.ConditionExpression
+        expression: "{{ task.identify_premium_wines.outputs.ordinary_wines | length > 0 }}"
+    tasks:
+      - id: export_ordinary_wines
+        type: io.kestra.plugin.scripts.sql.duckdb.Script
+        script: |
+          COPY (SELECT * FROM ordinary_wines) TO 'ordinary_wines.csv' (FORMAT 'csv');
+          
+          
   - id: send_reports
-    type: io.kestra.plugin.notifications.email.Sendgrid
-    from: "no-reply@bottleneck.com"
-    to: ["laure@bottleneck.com", "maria@bottleneck.com"]
+    from: '{{ secret("EMAIL_SENDER") }}'
+    to: 
+      - '{{ secret("EMAIL_RECIPIENT_1") }}'
+     - '{{ secret("EMAIL_RECIPIENT_2") }}'
     subject: "Rapports Mensuels - Chiffres et Vins Premium"
     attachments:
       - 'revenue_report.xlsx'
