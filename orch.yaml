@@ -7,16 +7,31 @@ triggers:
     cron: "0 9 15 * *"  # Exécution chaque 15 du mois à 9h
 
 tasks:
+  - id: fetch_files
+    type: io.kestra.plugin.aws.s3.Download
+    bucket: "my-data-bucket"
+    region: "eu-west-1"
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretAccessKey: "{{ secret('AWS_SECRET_KEY') }}"
+    files:
+      - "erp.xlsx"
+      - "web.xlsx"
+      - "liaison.xlsx"
+
   - id: load_data
     type: io.kestra.plugin.scripts.python.Script
     script: |
       import duckdb
       conn = duckdb.connect(database=':memory:')
-      conn.execute("""
-      CREATE TABLE erp AS SELECT * FROM read_csv('erp.xlsx', header=True);
-      CREATE TABLE web AS SELECT * FROM read_csv('web.xlsx', header=True);
-      CREATE TABLE liaison AS SELECT * FROM read_csv('liaison.xlsx', header=True);
-      """)
+
+      erp_path = "{{ outputs.fetch_files.uri }}/erp.xlsx"
+      web_path = "{{ outputs.fetch_files.uri }}/web.xlsx"
+      liaison_path = "{{ outputs.fetch_files.uri }}/liaison.xlsx"
+
+      conn.execute(f"CREATE TABLE erp AS SELECT * FROM read_csv('{erp_path}', header=True);")
+      conn.execute(f"CREATE TABLE web AS SELECT * FROM read_csv('{web_path}', header=True);")
+      conn.execute(f"CREATE TABLE liaison AS SELECT * FROM read_csv('{liaison_path}', header=True);")
+
 
   - id: clean_data
     type: io.kestra.plugin.scripts.sql.duckdb.Script
