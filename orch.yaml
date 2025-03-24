@@ -3,34 +3,73 @@ namespace: bottleneck
 
 triggers:
   - id: monthly-trigger
-    type: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
     cron: "0 9 15 * *"  # Exécution chaque 15 du mois à 9h
 
 tasks:
-  - id: fetch_files
+  - id: download_file_erp
     type: io.kestra.plugin.aws.s3.Download
-    bucket: "my-data-bucket"
-    region: "eu-west-1"
+    bucket: "{{ secret('AWS_BUCKET') }}"
+    region: "eu-west-3"
     accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
-    secretAccessKey: "{{ secret('AWS_SECRET_KEY') }}"
-    files:
-      - "erp.xlsx"
-      - "web.xlsx"
-      - "liaison.xlsx"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY') }}"
+
+  - id: download_file_liaison
+    type: io.kestra.plugin.aws.s3.Download
+    bucket: "{{ secret('AWS_BUCKET') }}"
+    region: "eu-west-3"
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY') }}"
+
+  - id: download_file_web
+    type: io.kestra.plugin.aws.s3.Download
+    bucket: "{{ secret('AWS_BUCKET') }}"
+    region: "eu-west-3"
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY') }}"
 
   - id: load_data
     type: io.kestra.plugin.scripts.python.Script
     script: |
+      import os
+
+      # Installer pandas, duckdb et openpyxl
+      os.system('pip install pandas duckdb openpyxl')
+
+      import pandas as pd
       import duckdb
+
+      # Connexion à une base de données en mémoire
       conn = duckdb.connect(database=':memory:')
 
-      erp_path = "{{ outputs.fetch_files.uri }}/erp.xlsx"
-      web_path = "{{ outputs.fetch_files.uri }}/web.xlsx"
-      liaison_path = "{{ outputs.fetch_files.uri }}/liaison.xlsx"
+      # Récupérer les chemins des fichiers téléchargés depuis Kestra
+      erp_path = "{{ outputs.download_file_erp.uri }}"
+      liaison_path = "{{ outputs.download_file_liaison.uri }}"
+      web_path = "{{ outputs.download_file_web.uri }}"
 
-      conn.execute(f"CREATE TABLE erp AS SELECT * FROM read_csv('{erp_path}', header=True);")
-      conn.execute(f"CREATE TABLE web AS SELECT * FROM read_csv('{web_path}', header=True);")
-      conn.execute(f"CREATE TABLE liaison AS SELECT * FROM read_csv('{liaison_path}', header=True);")
+      # Lire chaque fichier Excel avec pandas
+      df_erp = pd.read_excel(erp_path)
+      df_liaison = pd.read_excel(liaison_path)
+      df_web = pd.read_excel(web_path)
+
+      # Créer une table DuckDB pour chaque fichier
+      conn.execute("CREATE TABLE erp AS SELECT * FROM df_erp")
+      conn.execute("CREATE TABLE liaison AS SELECT * FROM df_liaison")
+      conn.execute("CREATE TABLE web AS SELECT * FROM df_web")
+
+      # Optionnel : Afficher les données pour vérifier
+      result_erp = conn.execute("SELECT * FROM erp LIMIT 5;").fetchall()
+      result_liaison = conn.execute("SELECT * FROM liaison LIMIT 5;").fetchall()
+      result_web = conn.execute("SELECT * FROM web LIMIT 5;").fetchall()
+
+      # Affichage des résultats pour vérification
+      print("Table ERP:", result_erp)
+      print("Table Liaison:", result_liaison)
+      print("Table Web:", result_web)
+
 
 
   - id: clean_data
