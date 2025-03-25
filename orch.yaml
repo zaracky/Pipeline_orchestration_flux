@@ -35,7 +35,6 @@ tasks:
     type: io.kestra.plugin.scripts.python.Script
     script: |
       import os
-
       # Installer pandas, duckdb et openpyxl
       os.system('pip install pandas duckdb openpyxl')
 
@@ -55,12 +54,17 @@ tasks:
       df_liaison = pd.read_excel(liaison_path)
       df_web = pd.read_excel(web_path)
 
+      # Affichage des colonnes pour vérifier leur structure
+      print("Colonnes df_erp :", df_erp.columns.tolist())
+      print("Colonnes df_liaison :", df_liaison.columns.tolist())
+      print("Colonnes df_web :", df_web.columns.tolist())
+
       # Créer une table DuckDB pour chaque fichier
       conn.execute("CREATE TABLE erp AS SELECT * FROM df_erp")
       conn.execute("CREATE TABLE liaison AS SELECT * FROM df_liaison")
       conn.execute("CREATE TABLE web AS SELECT * FROM df_web")
 
-      # Optionnel : Afficher les données pour vérifier
+       # Optionnel : Afficher les données pour vérifier
       result_erp = conn.execute("SELECT * FROM erp LIMIT 5;").fetchall()
       result_liaison = conn.execute("SELECT * FROM liaison LIMIT 5;").fetchall()
       result_web = conn.execute("SELECT * FROM web LIMIT 5;").fetchall()
@@ -69,6 +73,85 @@ tasks:
       print("Table ERP:", result_erp)
       print("Table Liaison:", result_liaison)
       print("Table Web:", result_web)
+
+      # Afficher uniquement les colonnes de la table "erp"
+      try:
+        print(f"Colonnes de la table erp:")
+        columns = conn.execute("DESCRIBE liaison;").fetchall()
+        for col in columns:
+          print(col)
+        print("\n")
+      except Exception as e:
+        print(f"Erreur lors de la récupération des colonnes pour la table erp: {e}")
+
+      # Suppression des enregistrements avec des valeurs NULL dans certaines colonnes
+      conn.execute("DELETE FROM erp WHERE product_id IS NULL;")
+      conn.execute("DELETE FROM web WHERE sku IS NULL;")
+      conn.execute("DELETE FROM liaison WHERE product_id IS NULL AND id_web IS NULL;")
+      webn_count2 = conn.execute("SELECT COUNT(*) FROM web;").fetchone()[0]
+
+      print(f"Nombre de lignes dans la table webn_count2 après nettoyage: {webn_count2}")
+
+
+      # Création des tables propres (sans doublons)
+      conn.execute("CREATE TABLE erp_clean AS SELECT DISTINCT * FROM erp;")
+      conn.execute("CREATE TABLE liaison_clean AS SELECT DISTINCT * FROM liaison;")
+      conn.execute("""
+        CREATE TABLE web_clean AS 
+        SELECT DISTINCT sku, virtual, downloadable, rating_count, average_rating, total_sales, 
+                    tax_status, tax_class, post_author, post_date, post_date_gmt
+        FROM web;
+        """)
+
+      # Afficher le nombre de lignes dans les nouvelles tables après nettoyage
+      erp_clean_count = conn.execute("SELECT COUNT(*) FROM erp_clean;").fetchone()[0]
+      web_clean_count = conn.execute("SELECT COUNT(*) FROM web_clean;").fetchone()[0]
+      liaison_clean_count = conn.execute("SELECT COUNT(*) FROM liaison_clean;").fetchone()[0]
+
+      print(f"Nombre de lignes dans la table 'erp_clean' après nettoyage: {erp_clean_count}")
+      print(f"Nombre de lignes dans la table 'web_clean' après nettoyage: {web_clean_count}")
+      print(f"Nombre de lignes dans la table 'liaison_clean' après nettoyage: {liaison_clean_count}")
+
+
+      # Fusion des données entre les tables erp_clean, liaison_clean et web_clean
+      conn.execute("""
+        CREATE TABLE merged_data AS
+        SELECT e.*, w.*
+        FROM erp_clean e
+        JOIN liaison_clean l ON e.product_id = l.product_id
+        JOIN web_clean w ON l.id_web = w.sku;
+        """)
+
+      merge_data_count = conn.execute("SELECT COUNT(*) FROM merged_data;").fetchone()[0]
+      merge_data_revenue = conn.execute("SELECT * FROM merged_data LIMIT 5;").fetchall()
+      merge_data_columns = conn.execute("DESCRIBE merged_data;").fetchall()
+      print(f"Nombre de lignes dans la table 'merged_data' après nettoyage: {merge_data_count}")
+      print("merge_data_revenue:", merge_data_revenue)
+      print("merge_data_revenue:", merge_data_columns)
+
+      # Calcul du revenu par produit
+      conn.execute("""
+        CREATE TABLE revenue AS
+       SELECT e.product_id, SUM(e.price * e.stock_quantity) AS revenue
+        FROM merged_data e
+        GROUP BY e.product_id;
+        """)
+
+      # Calcul du revenu total
+      conn.execute("""
+        CREATE TABLE total_revenue AS
+        SELECT SUM(revenue) AS total FROM revenue;
+        """)
+
+      # Affichage de la table des résultats pour vérification (facultatif)
+      result_revenue = conn.execute("SELECT * FROM revenue LIMIT 5;").fetchall()
+      result_total_revenue = conn.execute("SELECT * FROM total_revenue;").fetchall()
+
+      # Affichage des résultats pour vérification
+      print("Table Revenue:", result_revenue)
+      print("Table Total Revenue:", result_total_revenue)
+
+
 
 
 
