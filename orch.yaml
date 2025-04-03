@@ -31,232 +31,83 @@ tasks:
     secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
     key: "{{ secret('AWS_KEY') }}"
 
-  - id: load_data
-    type: io.kestra.plugin.scripts.python.Script
-    script: |
-      import os
-      # Installer pandas, duckdb et openpyxl
-      os.system('pip install pandas duckdb openpyxl')
 
-      import pandas as pd
-      import duckdb
+  - id: clean_erp_to_db
+    type: io.kestra.plugin.jdbc.duckdb.Query
+    url: 'jdbc:duckdb:/tmp/my_database.duckdb'
+    inputFiles:
+      Fichier_erp.xlsx: "{{ outputs.download_file_erp.uri }}" 
+    sql: |-
+        INSTALL sheetreader FROM community;
+        LOAD sheetreader;
 
-      # Connexion à une base de données en mémoire
-      conn = duckdb.connect(database=':memory:')
-
-      # Récupérer les chemins des fichiers téléchargés depuis Kestra
-      erp_path = "{{ outputs.download_file_erp.uri }}"
-      liaison_path = "{{ outputs.download_file_liaison.uri }}"
-      web_path = "{{ outputs.download_file_web.uri }}"
-
-      # Lire chaque fichier Excel avec pandas
-      df_erp = pd.read_excel(erp_path)
-      df_liaison = pd.read_excel(liaison_path)
-      df_web = pd.read_excel(web_path)
-
-      # Affichage des colonnes pour vérifier leur structure
-      print("Colonnes df_erp :", df_erp.columns.tolist())
-      print("Colonnes df_liaison :", df_liaison.columns.tolist())
-      print("Colonnes df_web :", df_web.columns.tolist())
-
-      # Créer une table DuckDB pour chaque fichier
-      conn.execute("CREATE TABLE erp AS SELECT * FROM df_erp")
-      conn.execute("CREATE TABLE liaison AS SELECT * FROM df_liaison")
-      conn.execute("CREATE TABLE web AS SELECT * FROM df_web")
-
-       # Optionnel : Afficher les données pour vérifier
-      result_erp = conn.execute("SELECT * FROM erp LIMIT 5;").fetchall()
-      result_liaison = conn.execute("SELECT * FROM liaison LIMIT 5;").fetchall()
-      result_web = conn.execute("SELECT * FROM web LIMIT 5;").fetchall()
-
-      # Affichage des résultats pour vérification
-      print("Table ERP:", result_erp)
-      print("Table Liaison:", result_liaison)
-      print("Table Web:", result_web)
-
-      # Afficher uniquement les colonnes de la table "erp"
-      try:
-        print(f"Colonnes de la table erp:")
-        columns = conn.execute("DESCRIBE liaison;").fetchall()
-        for col in columns:
-          print(col)
-        print("\n")
-      except Exception as e:
-        print(f"Erreur lors de la récupération des colonnes pour la table erp: {e}")
-
-      # Suppression des enregistrements avec des valeurs NULL dans certaines colonnes
-      conn.execute("DELETE FROM erp WHERE product_id IS NULL;")
-      conn.execute("DELETE FROM web WHERE sku IS NULL;")
-      conn.execute("DELETE FROM liaison WHERE product_id IS NULL AND id_web IS NULL;")
-      webn_count2 = conn.execute("SELECT COUNT(*) FROM web;").fetchone()[0]
-
-      print(f"Nombre de lignes dans la table webn_count2 après nettoyage: {webn_count2}")
+        DROP TABLE IF EXISTS clean_erp;
+        CREATE TABLE clean_erp AS 
+        SELECT DISTINCT ON (product_id) * 
+        FROM sheetreader('{{ workingDir }}/Fichier_erp.xlsx') 
+        WHERE product_id IS NOT NULL 
+        ORDER BY product_id;
 
 
-      # Création des tables propres (sans doublons)
-      conn.execute("CREATE TABLE erp_clean AS SELECT DISTINCT * FROM erp;")
-      conn.execute("CREATE TABLE liaison_clean AS SELECT DISTINCT * FROM liaison;")
-      conn.execute("""
-        CREATE TABLE web_clean AS 
-        SELECT DISTINCT sku, virtual, downloadable, rating_count, average_rating, total_sales, 
-                    tax_status, tax_class, post_author, post_date, post_date_gmt
-        FROM web;
-        """)
+  - id: clean_web_to_db
+    type: io.kestra.plugin.jdbc.duckdb.Query
+    url: 'jdbc:duckdb:/tmp/my_database.duckdb'
+    inputFiles:
+      Fichier_web.xlsx: "{{ outputs.download_file_web.uri }}" 
+    sql: |-
+        INSTALL sheetreader FROM community;
+        LOAD sheetreader;
 
-      # Afficher le nombre de lignes dans les nouvelles tables après nettoyage
-      erp_clean_count = conn.execute("SELECT COUNT(*) FROM erp_clean;").fetchone()[0]
-      web_clean_count = conn.execute("SELECT COUNT(*) FROM web_clean;").fetchone()[0]
-      liaison_clean_count = conn.execute("SELECT COUNT(*) FROM liaison_clean;").fetchone()[0]
+        DROP TABLE IF EXISTS clean_web;
+        CREATE TABLE clean_web AS 
+        SELECT DISTINCT ON (sku) *
+        FROM sheetreader('{{ workingDir }}/Fichier_web.xlsx') 
+        WHERE sku IS NOT NULL 
+        ORDER BY sku;
 
-      print(f"Nombre de lignes dans la table 'erp_clean' après nettoyage: {erp_clean_count}")
-      print(f"Nombre de lignes dans la table 'web_clean' après nettoyage: {web_clean_count}")
-      print(f"Nombre de lignes dans la table 'liaison_clean' après nettoyage: {liaison_clean_count}")
+        DROP TABLE IF EXISTS web;
+        CREATE TABLE web AS 
+        SELECT *
+        FROM sheetreader('{{ workingDir }}/Fichier_web.xlsx')  
+        ORDER BY sku;
+
+  - id: clean_liaison_to_db
+    type: io.kestra.plugin.jdbc.duckdb.Query
+    url: 'jdbc:duckdb:/tmp/my_database.duckdb'
+    inputFiles:
+      Fichier_liaison.xlsx: "{{ outputs.download_file_liaison.uri }}" 
+    sql: |-
+        INSTALL sheetreader FROM community;
+        LOAD sheetreader;
+
+        DROP TABLE IF EXISTS clean_liaison;
+        CREATE TABLE clean_liaison AS 
+        SELECT DISTINCT product_id, id_web
+        FROM sheetreader('{{ workingDir }}/Fichier_liaison.xlsx') 
+        WHERE product_id IS NOT NULL 
+        OR id_web IS NOT NULL;
 
 
-      # Fusion des données entre les tables erp_clean, liaison_clean et web_clean
-      conn.execute("""
-        CREATE TABLE merged_data AS
-        SELECT e.*, w.*
-        FROM erp_clean e
-        JOIN liaison_clean l ON e.product_id = l.product_id
-        JOIN web_clean w ON l.id_web = w.sku;
-        """)
 
-      merge_data_count = conn.execute("SELECT COUNT(*) FROM merged_data;").fetchone()[0]
-      merge_data_revenue = conn.execute("SELECT * FROM merged_data LIMIT 5;").fetchall()
-      merge_data_columns = conn.execute("DESCRIBE merged_data;").fetchall()
-      print(f"Nombre de lignes dans la table 'merged_data' après nettoyage: {merge_data_count}")
-      print("merge_data_revenue:", merge_data_revenue)
-      print("merge_data_revenue:", merge_data_columns)
+  - id: calcul_ca
+    type: io.kestra.plugin.jdbc.duckdb.Query
+    url: 'jdbc:duckdb:/tmp/my_database.duckdb'
+    sql: |-
+        DROP TABLE IF EXISTS merged_data;
+        CREATE TABLE merged_data AS (
+          SELECT e.*, w.*
+          FROM clean_erp e
+          JOIN clean_liaison l ON e.product_id = l.product_id
+          JOIN clean_web w ON l.id_web = w.sku
+        );
 
-      # Calcul du revenu par produit
-      conn.execute("""
+        DROP TABLE IF EXISTS revenue;
         CREATE TABLE revenue AS
-       SELECT e.product_id, SUM(e.price * e.stock_quantity) AS revenue
-        FROM merged_data e
-        GROUP BY e.product_id;
-        """)
+          SELECT e.product_id, SUM(e.price * e.stock_quantity) AS revenue
+          FROM merged_data e
+          GROUP BY e.product_id;
 
-      # Calcul du revenu total
-      conn.execute("""
+        DROP TABLE IF EXISTS total_revenue;
         CREATE TABLE total_revenue AS
-        SELECT SUM(revenue) AS total FROM revenue;
-        """)
+          SELECT SUM(revenue) AS total FROM revenue;
 
-      # Affichage de la table des résultats pour vérification (facultatif)
-      result_revenue = conn.execute("SELECT * FROM revenue LIMIT 5;").fetchall()
-      result_total_revenue = conn.execute("SELECT * FROM total_revenue;").fetchall()
-
-      # Affichage des résultats pour vérification
-      print("Table Revenue:", result_revenue)
-      print("Table Total Revenue:", result_total_revenue)
-
-
-
-
-
-  - id: clean_data
-    type: io.kestra.plugin.scripts.sql.duckdb.Script
-    script: |
-      DELETE FROM erp WHERE id IS NULL;
-      DELETE FROM web WHERE id IS NULL;
-      DELETE FROM liaison WHERE id IS NULL;
-
-  - id: deduplicate_data
-    type: io.kestra.plugin.scripts.sql.duckdb.Script
-    script: |
-      CREATE TABLE erp_clean AS SELECT DISTINCT * FROM erp;
-      CREATE TABLE web_clean AS SELECT DISTINCT * FROM web;
-      CREATE TABLE liaison_clean AS SELECT DISTINCT * FROM liaison;
-
-  - id: join_data
-    type: io.kestra.plugin.scripts.sql.duckdb.Script
-    script: |
-      CREATE TABLE merged_data AS
-      SELECT e.*, w.*
-      FROM erp_clean e
-      JOIN liaison_clean l ON e.id = l.erp_id
-      JOIN web_clean w ON l.web_id = w.id;
-
-  - id: calculate_revenue
-    type: io.kestra.plugin.scripts.sql.duckdb.Script
-    script: |
-      CREATE TABLE revenue AS
-      SELECT product_id, SUM(price * quantity) AS revenue
-      FROM merged_data
-      GROUP BY product_id;
-
-      CREATE TABLE total_revenue AS
-      SELECT SUM(revenue) AS total FROM revenue;
-
-  - id: identify_premium_wines
-    type: io.kestra.plugin.scripts.python.Script
-    script: |
-      import duckdb
-      import pandas as pd
-
-      conn = duckdb.connect(database=':memory:')
-      df = conn.execute("SELECT product_id, price FROM merged_data").fetch_df()
-
-      mean_price = df['price'].mean()
-      std_price = df['price'].std()
-      df['z_score'] = (df['price'] - mean_price) / std_price
-
-      premium_wines = df[df['z_score'] > 2]
-      ordinary_wines = df[df['z_score'] <= 2]
-
-      premium_wines.to_csv('premium_wines.csv', index=False)
-      ordinary_wines.to_csv('ordinary_wines.csv', index=False)
-
-  - id: export_reports
-    type: io.kestra.plugin.scripts.sql.duckdb.Script
-    script: |
-      COPY (SELECT * FROM revenue) TO 'revenue_report.xlsx' (FORMAT 'xlsx');
-
-  - id: check_premium_wines
-    type: io.kestra.core.tasks.flows.Conditional
-    conditions:
-      - type: io.kestra.core.tasks.flows.ConditionExpression
-        expression: "{{ task.identify_premium_wines.outputs.premium_wines | length > 0 }}"
-    tasks:
-      - id: export_premium_wines
-        type: io.kestra.plugin.scripts.sql.duckdb.Script
-        script: |
-          COPY (SELECT * FROM premium_wines) TO 'premium_wines.csv' (FORMAT 'csv');
-
-  - id: check_ordinary_wines
-    type: io.kestra.core.tasks.flows.Conditional
-    conditions:
-      - type: io.kestra.core.tasks.flows.ConditionExpression
-        expression: "{{ task.identify_premium_wines.outputs.ordinary_wines | length > 0 }}"
-    tasks:
-      - id: export_ordinary_wines
-        type: io.kestra.plugin.scripts.sql.duckdb.Script
-        script: |
-          COPY (SELECT * FROM ordinary_wines) TO 'ordinary_wines.csv' (FORMAT 'csv');
-          
-          
- - id: send_email_if_files_exist
-    type: io.kestra.core.tasks.flows.Conditional
-    conditions:
-      - type: io.kestra.core.tasks.flows.ConditionExpression
-        expression: "{{ task.export_revenue.outputs.file != null or task.export_premium_wines.outputs.file != null or task.export_ordinary_wines.outputs.file != null }}"
-    tasks:
-      - id: send_reports
-        type: io.kestra.plugin.notifications.email.Sendgrid
-        from: "{{ secret('EMAIL_FROM') }}"
-        to: 
-          - "{{ secret('EMAIL_TO_1') }}"
-          - "{{ secret('EMAIL_TO_2') }}"
-        subject: "Rapports Mensuels - Chiffres et Vins Premium"
-        attachments:
-          - 'revenue_report.xlsx'
-          - 'premium_wines.csv'
-          - 'ordinary_wines.csv'
-        content: |
-          Bonjour,
-          
-          Veuillez trouver ci-joints les rapports des chiffres d'affaires et la liste des vins premium et ordinaires.
-          
-          Cordialement,
-          L'équipe Data Engineering.
