@@ -1,0 +1,318 @@
+id: wine-data-processing
+namespace: bottleneck
+
+triggers:
+  - id: monthly-trigger
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 9 15 * *"  # Exécution chaque 15 du mois à 9h
+
+tasks:
+  - id: download_file_erp
+    type: io.kestra.plugin.aws.s3.Download
+    bucket: "{{ secret('AWS_BUCKET') }}"
+    region: "eu-west-3"
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY') }}"
+
+  - id: download_file_liaison
+    type: io.kestra.plugin.aws.s3.Download
+    bucket: "{{ secret('AWS_BUCKET') }}"
+    region: "eu-west-3"
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY') }}"
+
+  - id: download_file_web
+    type: io.kestra.plugin.aws.s3.Download
+    bucket: "{{ secret('AWS_BUCKET') }}"
+    region: "eu-west-3"
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY') }}"
+
+
+  - id: duckdb_tests
+    type: io.kestra.plugin.jdbc.duckdb.Query
+    inputFiles:
+        Fichier_erp.xlsx: "{{ outputs.download_file_erp.uri }}"
+        Fichier_web.xlsx: "{{ outputs.download_file_web.uri }}"
+        fichier_liaison.xlsx: "{{ outputs.download_file_liaison.uri }}"
+    sql: |
+        INSTALL spatial;
+        LOAD spatial;
+        WITH 
+        -- Nettoyage des données ERP
+        clean_erp AS (
+            SELECT DISTINCT ON (product_id) *
+            FROM st_read('{{ workingDir }}/Fichier_erp.xlsx') 
+            WHERE product_id IS NOT NULL
+            ORDER BY product_id
+        ),
+        -- Nettoyage des données Web
+        clean_web AS (
+            SELECT DISTINCT ON (sku) *
+            FROM st_read('{{ workingDir }}/Fichier_web.xlsx') 
+            WHERE sku IS NOT NULL
+            ORDER BY sku
+        ),
+        -- Nettoyage des données de liaison
+        clean_liaison AS (
+            SELECT DISTINCT product_id, id_web
+            FROM st_read('{{ workingDir }}/fichier_liaison.xlsx') 
+            WHERE product_id IS NOT NULL 
+            AND id_web IS NOT NULL
+        ),
+        -- Jointure des données
+        joined_data AS (
+            SELECT * 
+            FROM clean_erp e
+            INNER JOIN clean_liaison l ON e.product_id = l.product_id
+            INNER JOIN clean_web w ON w.sku = l.id_web
+        ),
+        -- Tests d'absence de doublons
+        test_doublons_erp AS (
+            SELECT COUNT(*) AS total_rows, COUNT(DISTINCT product_id) AS unique_rows
+            FROM clean_erp
+        ),
+        test_doublons_web AS (
+            SELECT COUNT(*) AS total_rows, COUNT(DISTINCT sku) AS unique_rows
+            FROM clean_web
+        ),
+        test_doublons_liaison AS (
+            SELECT COUNT(*) AS total_rows, COUNT(DISTINCT product_id || '-' || id_web) AS unique_rows
+            FROM clean_liaison
+        ),
+        -- Tests d'absence de valeurs manquantes
+        test_null_erp AS (
+            SELECT COUNT(*) AS missing_values 
+            FROM clean_erp 
+            WHERE product_id IS NULL
+        ),
+        test_null_web AS (
+            SELECT COUNT(*) AS missing_values 
+            FROM clean_web 
+            WHERE sku IS NULL
+        ),
+        test_null_liaison AS (
+            SELECT COUNT(*) AS missing_values 
+            FROM clean_liaison 
+            WHERE product_id IS NULL OR id_web IS NULL
+        ),
+        -- Test de cohérence des jointures
+        test_jointure AS (
+            SELECT COUNT(*) AS nb_joined_rows
+            FROM joined_data
+        ),
+        -- Test de cohérence du chiffre d'affaires
+        test_chiffre_affaires AS (
+            SELECT SUM(price * total_sales) AS ca_total
+            FROM joined_data
+        )
+        -- Consolidation des résultats dans un seul rapport
+        SELECT
+            'Doublons ERP' AS test_name, 
+            CASE 
+                WHEN (SELECT total_rows FROM test_doublons_erp) = '{{ vars.erp_row_nb }}' THEN 'success' 
+                ELSE 'failure' 
+            END AS test_result
+        UNION ALL
+        SELECT 
+            'Doublons Web', 
+            CASE 
+                WHEN (SELECT total_rows FROM test_doublons_web) = '{{ vars.web_row_nb }}' THEN 'success' 
+                ELSE 'failure' 
+            END
+        UNION ALL
+        SELECT 
+            'Doublons Liaison', 
+            CASE 
+                WHEN (SELECT total_rows FROM test_doublons_liaison) = '{{ vars.liaison_row_nb }}' THEN 'success' 
+                ELSE 'failure' 
+            END
+        UNION ALL
+        SELECT 
+            'Valeurs manquantes ERP', 
+            CASE 
+                WHEN (SELECT missing_values FROM test_null_erp) = 0 THEN 'success' 
+                ELSE 'failure' 
+            END
+        UNION ALL
+        SELECT 
+            'Valeurs manquantes Web', 
+            CASE 
+                WHEN (SELECT missing_values FROM test_null_web) = 0 THEN 'success' 
+                ELSE 'failure' 
+            END
+        UNION ALL
+        SELECT 
+            'Valeurs manquantes Liaison', 
+            CASE 
+                WHEN (SELECT missing_values FROM test_null_liaison) = 0 THEN 'success' 
+                ELSE 'failure' 
+            END
+        UNION ALL
+        SELECT 
+            'Cohérence Jointure', 
+            CASE 
+                WHEN (SELECT nb_joined_rows FROM test_jointure) = '{{ vars.fusion_row_nb }}' THEN 'success' 
+                ELSE 'failure' 
+            END
+        UNION ALL
+        SELECT 
+            'Chiffre Affaires Total', 
+            CASE 
+                WHEN ROUND((SELECT ca_total FROM test_chiffre_affaires), 2) = '{{ vars.ca }}' THEN 'success' 
+                ELSE 'failure' 
+            END;
+    fetchType: STORE
+
+  - id: excel_test_report
+    type: io.kestra.plugin.serdes.excel.IonToExcel
+    from: "{{ outputs.duckdb_tests.uri }}"
+
+  - id: duckdb
+    type: io.kestra.plugin.jdbc.duckdb.Query
+    inputFiles:
+      Fichier_erp.xlsx: "{{ outputs.download_file_erp.uri }}"
+      Fichier_web.xlsx: "{{ outputs.download_file_web.uri }}"
+      fichier_liaison.xlsx: "{{ outputs.download_file_liaison.uri }}"
+    sql: |
+      -- Installation et chargement de l'extension spatial
+      INSTALL spatial;
+      LOAD spatial;
+      WITH 
+      clean_erp AS (
+          SELECT DISTINCT ON (product_id) *
+          FROM st_read('{{ workingDir }}/Fichier_erp.xlsx') 
+          WHERE product_id IS NOT NULL
+          ORDER BY product_id
+      ),
+      -- Nettoyage des données Web
+      clean_web AS (
+          SELECT DISTINCT ON (sku) *
+          FROM st_read('{{ workingDir }}/Fichier_web.xlsx') 
+          WHERE sku IS NOT NULL
+          ORDER BY sku
+      ),
+      -- Nettoyage des données de liaison
+      clean_liaison AS (
+          SELECT DISTINCT product_id, id_web
+          FROM st_read('{{ workingDir }}/fichier_liaison.xlsx') 
+          WHERE product_id IS NOT NULL 
+          AND id_web IS NOT NULL
+      ),
+      -- Jointure des données
+      joined_data AS (
+          SELECT * 
+          FROM clean_erp e
+          INNER JOIN clean_liaison l ON e.product_id = l.product_id
+          INNER JOIN clean_web w ON w.sku = l.id_web
+      )
+      -- Calcul du CA par produit
+      SELECT
+          post_title,
+          total_sales,
+          price,
+          ROUND(price * total_sales, 2) as chiffre_affaires_produit
+      FROM joined_data; 
+    fetchType: STORE
+
+  - id: duckdb_to_excel
+    type: io.kestra.plugin.serdes.excel.IonToExcel
+    from: "{{ outputs.duckdb.uri }}"
+
+  - id: python
+    type: io.kestra.plugin.scripts.python.Script
+    warningOnStdErr: false
+    beforeCommands:
+      - pip install openpyxl --upgrade
+      - pip install pandas
+      - pip install kestra
+    outputFiles:
+      - "premium.csv"
+      - "ordinaire.csv"
+    script: |
+      import time
+      import pandas as pd
+      from kestra import Kestra
+      logger = Kestra.logger()
+
+      # Lire les fichier xlsx
+      erp_df = pd.read_excel("{{ outputs.download_file_erp.uri }}")
+      web_df = pd.read_excel("{{ outputs.download_file_web.uri }}")
+      liaison_df = pd.read_excel("{{ outputs.download_file_liaison.uri }}")
+
+      # Traitement de données
+      erp_df.dropna(subset=["product_id"], inplace=True)
+      erp_df.drop_duplicates(subset=['product_id'], inplace=True)
+      web_df.dropna(subset=["sku"], inplace=True)
+      web_df.drop_duplicates(subset=['sku'], inplace=True)
+      liaison_df.dropna(subset=["product_id", "id_web"], inplace=True)
+      liaison_df.drop_duplicates(subset=['product_id', 'id_web'], inplace=True)
+
+      # Jointure
+      web_df.rename(columns={"sku": "id_web"}, inplace=True)
+      new_df = pd.merge(web_df, liaison_df, on="id_web")
+      new_df = pd.merge(erp_df, new_df, on="product_id")
+
+      # Calcule de zscore
+      new_df["zscore"] = (new_df["price"] - new_df["price"].mean()) / new_df["price"].std()
+      new_df["category"] = new_df["zscore"].apply(lambda x: "Premium" if x > 2  else "Ordinaire")
+
+      # Category Premium
+      df_premium = new_df[new_df["category"] == "Premium"]
+      len_premium = len(df_premium)
+
+      assert len_premium == {{ vars.nb_pemium }}, ("Le nombre de vins millésimes détectés n'est pas {{ vars.nb_pemium }}")
+
+      # Category Ordinaire
+      df_ordinaire = new_df[new_df["category"] == "Ordinaire"]
+      
+      # Sauvegarde des fichiers d'export
+      df_premium.to_csv("premium.csv")
+      logger.info("Sauvegarde du fichier premium.csv")
+      time.sleep(0.5)
+      
+      df_ordinaire.to_csv("ordinaire.csv")  
+      logger.info("Sauvegarde du fichier ordinaire.csv")
+      time.sleep(0.5)
+
+  - id: upload_excel_report
+    type: io.kestra.plugin.aws.s3.Upload
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY') }}"
+    region: "eu-west-3"
+    bucket: "{{ secret('AWS_BUCKET') }}"
+    from: "{{ outputs.duckdb_to_excel.uri }}"
+
+
+
+  - id: upload_premium_csv
+    type: io.kestra.plugin.aws.s3.Upload
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY') }}"
+    region: "eu-west-3"
+    bucket: "{{ secret('AWS_BUCKET') }}"
+    from: "{{ outputs.python.outputFiles['premium.csv'] }}"
+
+
+  - id: upload_ordinaire_csv
+    type: io.kestra.plugin.aws.s3.Upload
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY') }}"
+    region: "eu-west-3"
+    bucket: "{{ secret('AWS_BUCKET') }}"
+    from: "{{ outputs.python.outputFiles['ordinaire.csv'] }}"
+
+errors:
+   - id: error
+     type: io.kestra.plugin.core.log.Log 
+     message: Echec de la tâche {{task.id}} 
+     level: ERROR
+        CREATE TABLE total_revenue AS
+          SELECT SUM(revenue) AS total FROM revenue;
+
