@@ -282,7 +282,7 @@ tasks:
     type: io.kestra.plugin.aws.s3.Upload
     accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
     secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
-    key: "{{ secret('AWS_KEY') }}"
+    key: "{{ secret('AWS_KEY_UPLOADY') }}"
     region: "eu-west-3"
     bucket: "{{ secret('AWS_BUCKET') }}"
     from: "{{ outputs.duckdb_to_excel.uri }}"
@@ -293,7 +293,7 @@ tasks:
     type: io.kestra.plugin.aws.s3.Upload
     accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
     secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
-    key: "{{ secret('AWS_KEY') }}"
+    key: "{{ secret('AWS_KEY_UPLOAD') }}"
     region: "eu-west-3"
     bucket: "{{ secret('AWS_BUCKET') }}"
     from: "{{ outputs.python.outputFiles['premium.csv'] }}"
@@ -303,7 +303,7 @@ tasks:
     type: io.kestra.plugin.aws.s3.Upload
     accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
     secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
-    key: "{{ secret('AWS_KEY') }}"
+    key: "{{ secret('AWS_KEY_UPLOAD') }}"
     region: "eu-west-3"
     bucket: "{{ secret('AWS_BUCKET') }}"
     from: "{{ outputs.python.outputFiles['ordinaire.csv'] }}"
