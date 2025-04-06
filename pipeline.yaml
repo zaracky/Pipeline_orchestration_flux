@@ -1,12 +1,14 @@
 id: wine-data-processing
 namespace: bottleneck
 
+#Planification du pipeline tout les 15 du mois
 triggers:
   - id: monthly-trigger
     type: io.kestra.plugin.core.trigger.Schedule
     cron: "0 9 15 * *"  # Exécution chaque 15 du mois à 9h
 
 tasks:
+#On telecharge les 3 fichiers depuis le bucket s3
   - id: download_file_erp
     type: io.kestra.plugin.aws.s3.Download
     bucket: "{{ secret('AWS_BUCKET') }}"
@@ -31,7 +33,7 @@ tasks:
     secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
     key: "{{ secret('AWS_KEY') }}"
 
-
+#ID qui va effectuer les tests entre chaque étape
   - id: duckdb_tests
     type: io.kestra.plugin.jdbc.duckdb.Query
     inputFiles:
@@ -222,6 +224,7 @@ tasks:
     type: io.kestra.plugin.serdes.excel.IonToExcel
     from: "{{ outputs.duckdb.uri }}"
 
+#ID python pour la comparaison des vins
   - id: python
     type: io.kestra.plugin.scripts.python.Script
     warningOnStdErr: false
@@ -278,6 +281,7 @@ tasks:
       logger.info("Sauvegarde du fichier ordinaire.csv")
       time.sleep(0.5)
 
+#Upload des rappors dans le bucket S3
   - id: upload_excel_report
     type: io.kestra.plugin.aws.s3.Upload
     accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
