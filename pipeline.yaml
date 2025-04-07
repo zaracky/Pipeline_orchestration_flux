@@ -312,6 +312,17 @@ tasks:
     bucket: "{{ secret('AWS_BUCKET') }}"
     from: "{{ outputs.python.outputFiles['ordinaire.csv'] }}"
 
+#Upload du rapport de test dans S3 pour debug
+    - id: upload_test_excel_report
+    type: io.kestra.plugin.aws.s3.Upload
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY_UPLOAD_TEST') }}"
+    region: "eu-west-3"
+    bucket: "{{ secret('AWS_BUCKET') }}"
+    from: "{{ outputs.excel_test_report.uri }}
+
+
 errors:
    - id: error
      type: io.kestra.plugin.core.log.Log 
