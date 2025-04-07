@@ -7,6 +7,15 @@ triggers:
     type: io.kestra.plugin.core.trigger.Schedule
     cron: "0 9 15 * *"  # Exécution chaque 15 du mois à 9h
 
+variables:
+    erp_row_nb: 825
+    web_row_nb: 1428
+    clean_row_nb: 714
+    liaison_row_nb: 825
+    fusion_row_nb: 714
+    ca: 70568.60
+    nb_pemium: 30
+
 tasks:
 #On telecharge les 3 fichiers depuis le bucket s3
   - id: download_file_erp
