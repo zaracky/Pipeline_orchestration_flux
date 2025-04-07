@@ -33,7 +33,7 @@ tasks:
     secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
     key: "{{ secret('AWS_KEY') }}"
 
-#ID qui va effectuer les tests entre chaque étape
+#ID qui va effectuer les tests pour chaque étape
   - id: verifications_duckdb
     type: io.kestra.plugin.jdbc.duckdb.Query
     inputFiles:
