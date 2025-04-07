@@ -65,6 +65,8 @@ Extraction Premium CSV : BottleNeck/extraction_premium.csv
 
 Extraction Ordinaire CSV : BottleNeck/extraction_ordinaire.csv
 
+Extraction Rapport Test : BottleNeck/debug/rapport_test.xlsx
+
 ### Exemple de résultat
 - revenue_report.xlsx : Un fichier Excel contenant le total des revenus par produit.
 - premium_wines.csv : Un fichier CSV avec les vins identifiés comme premium.
