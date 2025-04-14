@@ -17,14 +17,14 @@ variables:
     nb_pemium: 30
 
 tasks:
-#On telecharge les 3 fichiers depuis le bucket s3
+ # Téléchargement des 3 fichiers depuis S3 (ERP, Web, Liaison)
   - id: download_file_erp
     type: io.kestra.plugin.aws.s3.Download
     bucket: "{{ secret('AWS_BUCKET') }}"
     region: "eu-west-3"
     accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
     secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
-    key: "{{ secret('AWS_KEY') }}"
+    key: "{{ secret('AWS_KEY_ERP') }}"
 
   - id: download_file_liaison
     type: io.kestra.plugin.aws.s3.Download
@@ -32,7 +32,7 @@ tasks:
     region: "eu-west-3"
     accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
     secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
-    key: "{{ secret('AWS_KEY') }}"
+    key: "{{ secret('AWS_KEY_LIAISON') }}"
 
   - id: download_file_web
     type: io.kestra.plugin.aws.s3.Download
@@ -40,7 +40,7 @@ tasks:
     region: "eu-west-3"
     accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
     secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
-    key: "{{ secret('AWS_KEY') }}"
+    key: "{{ secret('AWS_KEY_WEB') }}"
 
 #ID qui va effectuer les tests pour chaque étape
   - id: verifications_duckdb
@@ -235,7 +235,7 @@ tasks:
     type: io.kestra.plugin.serdes.excel.IonToExcel
     from: "{{ outputs.duckdb.uri }}"
 
-# Analyse Python pour catégoriser les vins
+ # Analyse Python pour catégoriser les vins en premium/ordinaire
   - id: analyse_vins
     type: io.kestra.plugin.scripts.python.Script
     warningOnStdErr: false
@@ -292,15 +292,41 @@ tasks:
       logger.info("Sauvegarde du fichier ordinaire.csv")
       time.sleep(0.5)
 
+# Génération du rapport du Chiffre d'Affaires global
+  - id: generation_rapport_CA
+    type: io.kestra.plugin.scripts.python.Script
+    warningOnStdErr: false
+    beforeCommands:
+      - pip install pandas openpyxl
+    outputFiles:
+      - "rapport_CA.xlsx"
+    script: |
+      import pandas as pd
+
+      # Lire les données de CA par produit (fichier généré par duckdb_to_excel)
+      df_ca = pd.read_excel("{{ outputs.duckdb_to_excel.uri }}")
+
+      # Calculer le CA total
+      total_ca = df_ca["chiffre_affaires_produit"].sum().round(2)
+      df_total = pd.DataFrame([{
+          "description": "Chiffre d'affaires total",
+          "chiffre_affaires_total": total_ca
+      }])
+
+      # Export dans un fichier avec deux feuilles
+      with pd.ExcelWriter("rapport_CA.xlsx", engine="openpyxl") as writer:
+          df_ca.to_excel(writer, sheet_name="Détail CA", index=False)
+          df_total.to_excel(writer, sheet_name="CA Total", index=False)
+
 #Upload des rappors dans le bucket S3
-  - id: upload_rapport_excel
+  - id: upload_rapport_CA
     type: io.kestra.plugin.aws.s3.Upload
     accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
     secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
     key: "{{ secret('AWS_KEY_UPLOAD_REPORT') }}"
     region: "eu-west-3"
     bucket: "{{ secret('AWS_BUCKET') }}"
-    from: "{{ outputs.duckdb_to_excel.uri }}"
+    from: "{{ outputs.generation_rapport_CA.outputFiles['rapport_CA.xlsx'] }}""
 
   - id: upload_premium_csv
     type: io.kestra.plugin.aws.s3.Upload
@@ -309,7 +335,7 @@ tasks:
     key: "{{ secret('AWS_KEY_UPLOAD_PREMIUM') }}"
     region: "eu-west-3"
     bucket: "{{ secret('AWS_BUCKET') }}"
-    from: "{{ outputs.python.outputFiles['premium.csv'] }}"
+    from: "{{ outputs.analyse_vins.outputFiles['premium.csv'] }}"
 
 
   - id: upload_ordinaire_csv
@@ -319,14 +345,12 @@ tasks:
     key: "{{ secret('AWS_KEY_UPLOAD_ORDINAIRE') }}"
     region: "eu-west-3"
     bucket: "{{ secret('AWS_BUCKET') }}"
-    from: "{{ outputs.python.outputFiles['ordinaire.csv'] }}"
+    from: "{{ outputs.analyse_vins.outputFiles['ordinaire.csv'] }}"
 
-
+# Gestion des erreurs et log d'échec
 errors:
    - id: error
      type: io.kestra.plugin.core.log.Log 
      message: Echec de la tâche {{task.id}} 
      level: ERROR
-        CREATE TABLE total_revenue AS
-          SELECT SUM(revenue) AS total FROM revenue;
 
