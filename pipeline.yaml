@@ -20,27 +20,27 @@ tasks:
  # Téléchargement des 3 fichiers depuis S3 (ERP, Web, Liaison)
   - id: download_file_erp
     type: io.kestra.plugin.aws.s3.Download
-    bucket: "{{ env('AWS_BUCKET') }}"
+    bucket: "{{ secret('AWS_BUCKET') }}"
     region: "eu-west-3"
-    accessKeyId: "{{ env('AWS_ACCESS_KEY') }}"
-    secretKeyId: "{{ env('AWS_SECRET_KEY') }}"
-    key: "{{ env('AWS_KEY_ERP') }}"
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY_ERP') }}"
 
   - id: download_file_liaison
     type: io.kestra.plugin.aws.s3.Download
-    bucket: "{{ env('AWS_BUCKET') }}"
+    bucket: "{{ secret('AWS_BUCKET') }}"
     region: "eu-west-3"
-    accessKeyId: "{{ env('AWS_ACCESS_KEY') }}"
-    secretKeyId: "{{ env('AWS_SECRET_KEY') }}"
-    key: "{{ env('AWS_KEY_LIAISON') }}""
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY_LIAISON') }}""
 
   - id: download_file_web
     type: io.kestra.plugin.aws.s3.Download
-    bucket: "{{ env('AWS_BUCKET') }}"
+    bucket: "{{ secret('AWS_BUCKET') }}"
     region: "eu-west-3"
-    accessKeyId: "{{ env('AWS_ACCESS_KEY') }}"
-    secretKeyId: "{{ env('AWS_SECRET_KEY') }}"
-    key: "{{ env('AWS_KEY_WEB') }}"
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY_WEB') }}"
 
 #ID qui va effectuer les tests pour chaque étape
   - id: verifications_duckdb
@@ -321,30 +321,30 @@ tasks:
 #Upload des rappors dans le bucket S3
   - id: upload_rapport_CA
     type: io.kestra.plugin.aws.s3.Upload
-    accessKeyId: "{{ env('AWS_ACCESS_KEY') }}"
-    secretKeyId: "{{ env('AWS_SECRET_KEY') }}"
-    key: "{{ env('AWS_KEY_UPLOAD_REPORT') }}"
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY_UPLOAD_REPORT') }}"
     region: "eu-west-3"
-    bucket: "{{ env('AWS_BUCKET') }}"
+    bucket: "{{ secret('AWS_BUCKET') }}"
     from: "{{ outputs.generation_rapport_CA.outputFiles['rapport_CA.xlsx'] }}""
 
   - id: upload_premium_csv
     type: io.kestra.plugin.aws.s3.Upload
-    accessKeyId: "{{ env('AWS_ACCESS_KEY') }}"
-    secretKeyId: "{{ env('AWS_SECRET_KEY') }}"
-    key: "{{ env('AWS_KEY_UPLOAD_PREMIUM') }}"
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY_UPLOAD_PREMIUM') }}"
     region: "eu-west-3"
-    bucket: "{{ env('AWS_BUCKET') }}"
+    bucket: "{{ secret('AWS_BUCKET') }}"
     from: "{{ outputs.analyse_vins.outputFiles['premium.csv'] }}"
 
 
   - id: upload_ordinaire_csv
     type: io.kestra.plugin.aws.s3.Upload
-    accessKeyId: "{{ env('AWS_ACCESS_KEY') }}"
-    secretKeyId: "{{ env('AWS_SECRET_KEY') }}"
-    key: "{{ env('AWS_KEY_UPLOAD_ORDINAIRE') }}"
+    accessKeyId: "{{ secret('AWS_ACCESS_KEY') }}"
+    secretKeyId: "{{ secret('AWS_SECRET_KEY') }}"
+    key: "{{ secret('AWS_KEY_UPLOAD_ORDINAIRE') }}"
     region: "eu-west-3"
-    bucket: "{{ env('AWS_BUCKET') }}"
+    bucket: "{{ secret('AWS_BUCKET') }}"
     from: "{{ outputs.analyse_vins.outputFiles['ordinaire.csv'] }}"
 
 # Gestion des erreurs et log d'échec
