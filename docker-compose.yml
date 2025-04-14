@@ -26,6 +26,8 @@ services:
     pull_policy: never
     user: "root"
     command: server standalone
+    env_file:
+      - .env   # Chargement des variables d'environnement
     volumes:
       - kestra-data:/app/storage
       - /var/run/docker.sock:/var/run/docker.sock
