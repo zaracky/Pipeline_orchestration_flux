@@ -120,7 +120,7 @@ tasks:
             SELECT SUM(price * total_sales) AS ca_total
             FROM merged_data
         )
-        -- Consolidation des résultats dans un seul rapport
+        -- Consolidation des résultats
         SELECT
             'Doublons ERP' AS test_name, 
             CASE 
