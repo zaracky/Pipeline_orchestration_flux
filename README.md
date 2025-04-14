@@ -30,7 +30,7 @@ Le pipeline est conçu pour effectuer les étapes suivantes :
 Ce projet est disponible sur GitHub, où vous pouvez consulter le code source, proposer des modifications, et soumettre des issues. Le fichier `docker-compose.yml` pour démarrer facilement un environnement Kestra avec tous les services nécessaires est également disponible dans ce repository.
   
 ## Installation
-Le projet inclut un fichier `docker-compose.yml` pour faciliter le déploiement de l'environnement de pipeline avec Docker. Ce fichier contient la configuration pour lancer Kestra dans un conteneur Docker, avec les variables d'environnement nécessaires définies dans un fichier `.env`.
+Le projet inclut un fichier `docker-compose.yml` pour faciliter le déploiement de l'environnement de pipeline avec Docker. Ce fichier contient la configuration pour lancer Kestra dans un conteneur Docker.
 
 ### Pour démarrer l'environnement Kestra avec Docker :
 1. Clonez ce repository depuis GitHub :
@@ -54,9 +54,7 @@ Le projet inclut un fichier `docker-compose.yml` pour faciliter le déploiement 
 
 Le fichier docker-compose.yml configure un conteneur Kestra prêt à être utilisé pour exécuter le pipeline.
 
-## Fonctionnement du Pipeline
-### Variables d'Environnement
-Certaines variables peuvent être configurées directement dans le fichier .env. 
+## Fonctionnement du Pipeline 
 
 ### Structure des Fichiers
 Le pipeline travaille avec les fichiers suivants :
